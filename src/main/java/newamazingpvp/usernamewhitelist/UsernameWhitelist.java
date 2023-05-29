@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 @Plugin(id = "username-whitelist", name = "Username Whitelist", version = "1.0")
@@ -25,6 +26,7 @@ public class UsernameWhitelist {
     private final ProxyServer server;
     private final Logger logger;
     private Set<String> whitelist;
+    private Map<String, String> playerIPs;
 
     @Inject
     public UsernameWhitelist(ProxyServer server, Logger logger) {
@@ -32,6 +34,7 @@ public class UsernameWhitelist {
         this.logger = logger;
         this.whitelist = new HashSet<>();
         loadWhitelist();
+        loadPlayerIPs();
 
         server.getCommandManager().register("whitelist", new WhitelistCommand());
     }
@@ -75,8 +78,22 @@ public class UsernameWhitelist {
         String username = event.getPlayer().getUsername().toLowerCase();
         if (!whitelist.contains(username)) {
             event.setResult(LoginEvent.ComponentResult.denied(Component.text("You are not whitelisted on this server. Join discord.gg/PN8egFY3ap and let the owner know or ask your friends to /whitelist you")));
+        } else {
+            String currentIP = event.getPlayer().getRemoteAddress().getAddress().getHostAddress();
+
+            if (playerIPs.containsKey(username)) {
+                String previousIP = playerIPs.get(username);
+                if (!isIPClose(currentIP, previousIP)) {
+                    event.setResult(LoginEvent.ComponentResult.denied(Component.text("Your IP has changed significantly. You have been kicked.")));
+                    return;
+                }
+            }
+
+            playerIPs.put(username, currentIP);
+            savePlayerIPs();
         }
     }
+
 
     private class WhitelistCommand implements SimpleCommand {
         @Override
@@ -102,5 +119,45 @@ public class UsernameWhitelist {
                 invocation.source().sendMessage(Component.text("Usage: /whitelist <add|remove> <username>"));
             }
         }
+    }
+
+    private void loadPlayerIPs() {
+        try {
+            Path ipsPath = new File("plugins/username-whitelist/ip.json").toPath();
+            Files.createDirectories(ipsPath.getParent());
+            if (!Files.exists(ipsPath)) {
+                Files.createFile(ipsPath);
+            }
+
+            try (BufferedReader reader = new BufferedReader(new FileReader(ipsPath.toFile()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    String[] parts = line.split(":", 2);
+                    playerIPs.put(parts[0], parts[1]);
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Error loading ip.json", e);
+        }
+    }
+
+    private void savePlayerIPs() {
+        try {
+            Path ipsPath = new File("plugins/username-whitelist/ip.json").toPath();
+            try (BufferedWriter writer = new BufferedWriter(new FileWriter(ipsPath.toFile()))) {
+                for (Map.Entry<String, String> entry : playerIPs.entrySet()) {
+                    writer.write(entry.getKey() + ":" + entry.getValue());
+                    writer.newLine();
+                }
+            }
+        } catch (IOException e) {
+            logger.error("Error saving ip.json", e);
+        }
+    }
+
+    private boolean isIPClose(String ip1, String ip2) {
+        String[] parts1 = ip1.split("\\.");
+        String[] parts2 = ip2.split("\\.");
+        return parts1[0].equals(parts2[0]) && parts1[1].equals(parts2[1]) && parts1[2].equals(parts2[2]);
     }
 }
