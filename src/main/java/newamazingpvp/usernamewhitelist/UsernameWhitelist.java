@@ -17,6 +17,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -33,10 +34,12 @@ public class UsernameWhitelist {
         this.server = server;
         this.logger = logger;
         this.whitelist = new HashSet<>();
+        this.playerIPs = new HashMap<>();
         loadWhitelist();
         loadPlayerIPs();
 
         server.getCommandManager().register("whitelist", new WhitelistCommand());
+        server.getCommandManager().register("resetIP", new ResetIPCommand());
     }
 
     private void loadWhitelist() {
@@ -75,6 +78,7 @@ public class UsernameWhitelist {
     @Subscribe
     public void onLogin(LoginEvent event) {
         loadWhitelist();
+        loadPlayerIPs();
         String username = event.getPlayer().getUsername().toLowerCase();
         if (!whitelist.contains(username)) {
             event.setResult(LoginEvent.ComponentResult.denied(Component.text("You are not whitelisted on this server. Join discord.gg/PN8egFY3ap and let the owner know or ask your friends to /whitelist you")));
@@ -88,9 +92,9 @@ public class UsernameWhitelist {
                     return;
                 }
             }
-
             playerIPs.put(username, currentIP);
             savePlayerIPs();
+            loadPlayerIPs();
         }
     }
 
@@ -118,6 +122,22 @@ public class UsernameWhitelist {
             } else {
                 invocation.source().sendMessage(Component.text("Usage: /whitelist <add|remove> <username>"));
             }
+        }
+    }
+
+    private class ResetIPCommand implements SimpleCommand {
+        @Override
+        public void execute(Invocation invocation) {
+            String[] args = invocation.arguments();
+            if (args.length > 1) {
+                invocation.source().sendMessage(Component.text("Usage: /resetIP <username>"));
+                return;
+            }
+
+            String username = args[0].toLowerCase();
+            playerIPs.remove(username);
+            savePlayerIPs();
+            invocation.source().sendMessage(Component.text("IP address for " + username + " has been removed."));
         }
     }
 
