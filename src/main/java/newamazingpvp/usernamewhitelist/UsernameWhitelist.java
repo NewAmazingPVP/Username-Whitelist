@@ -1,5 +1,7 @@
 package newamazingpvp.usernamewhitelist;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.velocitypowered.api.command.SimpleCommand;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.LoginEvent;
@@ -15,31 +17,29 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 @Plugin(id = "username-whitelist", name = "Username Whitelist", version = "1.0")
 public class UsernameWhitelist {
     private final ProxyServer server;
     private final Logger logger;
     private Set<String> whitelist;
-    private Map<String, String> playerIPs;
+    private Map<String, String> playerCities;
 
     @Inject
     public UsernameWhitelist(ProxyServer server, Logger logger) {
         this.server = server;
         this.logger = logger;
         this.whitelist = new HashSet<>();
-        this.playerIPs = new HashMap<>();
+        this.playerCities = new HashMap<>();
         loadWhitelist();
-        loadPlayerIPs();
+        loadPlayerCities();
 
         server.getCommandManager().register("whitelist", new WhitelistCommand());
-        server.getCommandManager().register("resetIP", new ResetIPCommand());
+        server.getCommandManager().register("resetIP", new ResetCityCommand());
     }
 
     private void loadWhitelist() {
@@ -76,25 +76,28 @@ public class UsernameWhitelist {
     }
 
     @Subscribe
-    public void onLogin(LoginEvent event) {
+    public void onLogin(LoginEvent event) throws IOException {
         loadWhitelist();
-        loadPlayerIPs();
+        loadPlayerCities();
         String username = event.getPlayer().getUsername().toLowerCase();
         if (!whitelist.contains(username)) {
             event.setResult(LoginEvent.ComponentResult.denied(Component.text("You are not whitelisted on this server. Join discord.gg/PN8egFY3ap and let the owner know or ask your friends to /whitelist you")));
         } else {
-            String currentIP = event.getPlayer().getRemoteAddress().getAddress().getHostAddress();
+            String currentCity = event.getPlayer().getRemoteAddress().getAddress().getHostAddress();
+            ObjectMapper objectMapper = new ObjectMapper();
+            JsonNode node = objectMapper.readTree(new URL("http://www.geoplugin.net/json.gp?ip=" + currentCity));
+            String artifactName = node.get("geoplugin_city").asText();
 
-            if (playerIPs.containsKey(username)) {
-                String previousIP = playerIPs.get(username);
-                if (!isIPClose(currentIP, previousIP)) {
-                    event.setResult(LoginEvent.ComponentResult.denied(Component.text("Your IP has changed significantly. You have been kicked.")));
+            if (playerCities.containsKey(username)) {
+                String previousCity = playerCities.get(username);
+                if (!(Objects.equals(artifactName, previousCity))) {
+                    event.setResult(LoginEvent.ComponentResult.denied(Component.text("Your location has changed significantly. You have been kicked.")));
                     return;
                 }
             }
-            playerIPs.put(username, currentIP);
-            savePlayerIPs();
-            loadPlayerIPs();
+            playerCities.put(username, artifactName);
+            savePlayerCity();
+            loadPlayerCities();
         }
     }
 
@@ -125,7 +128,7 @@ public class UsernameWhitelist {
         }
     }
 
-    private class ResetIPCommand implements SimpleCommand {
+    private class ResetCityCommand implements SimpleCommand {
         @Override
         public void execute(Invocation invocation) {
             String[] args = invocation.arguments();
@@ -135,25 +138,25 @@ public class UsernameWhitelist {
             }
 
             String username = args[0].toLowerCase();
-            playerIPs.remove(username);
-            savePlayerIPs();
+            playerCities.remove(username);
+            savePlayerCity();
             invocation.source().sendMessage(Component.text("IP address for " + username + " has been removed."));
         }
     }
 
-    private void loadPlayerIPs() {
+    private void loadPlayerCities() {
         try {
-            Path ipsPath = new File("plugins/username-whitelist/ip.json").toPath();
-            Files.createDirectories(ipsPath.getParent());
-            if (!Files.exists(ipsPath)) {
-                Files.createFile(ipsPath);
+            Path cityPath = new File("plugins/username-whitelist/ip.json").toPath();
+            Files.createDirectories(cityPath.getParent());
+            if (!Files.exists(cityPath)) {
+                Files.createFile(cityPath);
             }
 
-            try (BufferedReader reader = new BufferedReader(new FileReader(ipsPath.toFile()))) {
+            try (BufferedReader reader = new BufferedReader(new FileReader(cityPath.toFile()))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
                     String[] parts = line.split(":", 2);
-                    playerIPs.put(parts[0], parts[1]);
+                    playerCities.put(parts[0], parts[1]);
                 }
             }
         } catch (Exception e) {
@@ -161,11 +164,11 @@ public class UsernameWhitelist {
         }
     }
 
-    private void savePlayerIPs() {
+    private void savePlayerCity() {
         try {
-            Path ipsPath = new File("plugins/username-whitelist/ip.json").toPath();
-            try (BufferedWriter writer = new BufferedWriter(new FileWriter(ipsPath.toFile()))) {
-                for (Map.Entry<String, String> entry : playerIPs.entrySet()) {
+            Path cityPath = new File("plugins/username-whitelist/ip.json").toPath();
+            try (BufferedWriter writer = new BufferedWriter(new FileWriter(cityPath.toFile()))) {
+                for (Map.Entry<String, String> entry : playerCities.entrySet()) {
                     writer.write(entry.getKey() + ":" + entry.getValue());
                     writer.newLine();
                 }
@@ -175,9 +178,4 @@ public class UsernameWhitelist {
         }
     }
 
-    private boolean isIPClose(String ip1, String ip2) {
-        String[] parts1 = ip1.split("\\.");
-        String[] parts2 = ip2.split("\\.");
-        return parts1[0].equals(parts2[0]) && parts1[1].equals(parts2[1]) && parts1[2].equals(parts2[2]);
-    }
 }
