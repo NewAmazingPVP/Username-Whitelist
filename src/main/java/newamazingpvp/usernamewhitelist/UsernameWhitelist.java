@@ -86,7 +86,7 @@ public class UsernameWhitelist {
             String currentCity = event.getPlayer().getRemoteAddress().getAddress().getHostAddress();
             ObjectMapper objectMapper = new ObjectMapper();
             JsonNode node = objectMapper.readTree(new URL("http://www.geoplugin.net/json.gp?ip=" + currentCity));
-            String artifactName = node.get("geoplugin_city").asText();
+            String artifactName = node.get("geoplugin_region").asText();
 
             if (playerCities.containsKey(username)) {
                 String previousCity = playerCities.get(username);
